@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat with AI</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      height: 100vh;
+      margin: 0;
+    }
+    #sidebar {
+      width: 250px;
+      background-color: #f4f4f4;
+      padding: 20px;
+      box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+    }
+    #sidebar h2 {
+      margin: 0 0 20px;
+    }
+    #new-conversation-button {
+      padding: 10px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-bottom: 20px;
+    }
+    #new-conversation-button:hover {
+      background-color: #0056b3;
+    }
+    #main {
+      width: calc(100% - 250px); /* Fixed width based on sidebar width */
+      display: flex;
+      flex-direction: column;
+    }
+    #chat-box {
+      flex-grow: 1;
+      padding: 20px;
+      overflow-y: auto;
+      background-color: #fff;
+      border-bottom: 1px solid #ccc;
+    }
+    #input-container {
+      display: flex;
+      padding: 10px;
+      background-color: #f9f9f9;
+      border-top: 1px solid #ccc;
+    }
+    #user-input {
+      flex-grow: 1;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      margin-right: 10px;
+    }
+    #send-button {
+      padding: 10px 20px;
+      background-color: #007bff;
+      border: none;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    #send-button:hover {
+      background-color: #0056b3;
+    }
+    .message {
+      margin: 10px 0;
+    }
+    .user-message {
+      font-weight: bold;
+    }
+    .assistant-message {
+      font-weight: bold;
+      color: blue;
+    }
+    code {
+      display: block;
+      background-color: #f8f8f8;
+      padding: 10px;
+      margin: 10px 0;
+      border-left: 5px solid #ccc;
+      white-space: pre-wrap; /* Ensures code wraps correctly */
+      font-family: monospace; /* Use monospace font for code */
+    }
+  </style>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <div id="sidebar">
+    <h2>Conversation</h2>
+    <button id="new-conversation-button">New Conversation</button>
+    <div id="conversation-name"></div>
+  </div>
+  <div id="main">
+    <div id="chat-box"></div>
+    <div id="input-container">
+      <input type="text" id="user-input" placeholder="Type your message here" />
+      <button id="send-button">></button>
+    </div>
+  </div>
+  <script>
+    const socket = io();
+    const chatBox = document.getElementById('chat-box');
+    const userInput = document.getElementById('user-input');
+    const sendButton = document.getElementById('send-button');
+    const newConversationButton = document.getElementById('new-conversation-button');
+    const conversationNameDiv = document.getElementById('conversation-name');
+
+    let conversationName = 'con1'; // Example conversation name
+
+    let assistantMessage = '';
+    let conversationHistory = []; // Array to store unformatted messages
+
+    function sendMessage() {
+      const userMessage = userInput.value;
+      userInput.value = '';
+      const formattedMessage = escapeHtml(userMessage);
+      chatBox.innerHTML += `<div class="message user-message"><strong>User:</strong> ${formattedMessage}</div>`;
+      chatBox.scrollTop = chatBox.scrollHeight;
+
+      conversationHistory.push({ role: 'user', content: userMessage });
+      assistantMessage = '';
+      socket.emit('user_message', { conversationName, message: userMessage });
+    }
+
+    function loadConversation(conversationName) {
+      socket.emit('load_conversation', conversationName);
+    }
+
+    function saveConversation() {
+      const messages = Array.from(document.querySelectorAll('#chat-box .message')).map(msg => {
+        const role = msg.classList.contains('user-message') ? 'user' : 'assistant';
+        return { role, content: msg.innerHTML.replace(/^<strong>User:<\/strong> |^<strong>Assistant:<\/strong> /, '') };
+      });
+      socket.emit('save_conversation', { name: conversationName, messages, history: conversationHistory });
+    }
+
+    function startNewConversation() {
+      conversationName = `con${Date.now()}`; // Create a unique conversation name
+      conversationHistory = [];
+      chatBox.innerHTML = '';
+      conversationNameDiv.textContent = conversationName;
+      socket.emit('new_conversation', conversationName);
+    }
+
+    newConversationButton.addEventListener('click', startNewConversation);
+
+    userInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        sendMessage();
+      }
+    });
+
+    sendButton.addEventListener('click', () => {
+      sendMessage();
+    });
+
+    socket.on('conversation_loaded', (data) => {
+      console.log('Loaded conversation data:', data); // Log the loaded data
+      const { name, messages, history } = data;
+      conversationHistory = history || [];
+      conversationNameDiv.textContent = name;
+      chatBox.innerHTML = messages.map(msg => {
+        const roleClass = msg.role === 'user' ? 'user-message' : 'assistant-message';
+        return `<div class="message ${roleClass}"><strong>${msg.role.charAt(0).toUpperCase() + msg.role.slice(1)}:</strong> ${msg.content}</div>`;
+      }).join('');
+    });
+
+    socket.on('assistant_message', (msg) => {
+      assistantMessage += msg;
+
+      // Remove the last assistant message if it exists
+      const lastAssistantMessage = document.querySelector('#chat-box div.assistant-message:last-of-type');
+      if (lastAssistantMessage) {
+        chatBox.removeChild(lastAssistantMessage);
+      }
+
+      // Append the new partial message
+      const formattedMessage = formatMessage(assistantMessage);
+      chatBox.innerHTML += `<div class="message assistant-message"><strong>Assistant:</strong> ${formattedMessage}</div>`;
+      chatBox.scrollTop = chatBox.scrollHeight;
+    });
+
+    socket.on('end_response', () => {
+      conversationHistory.push({ role: 'assistant', content: assistantMessage });
+      assistantMessage = ''; // Reset the buffer
+      saveConversation(); // Save the conversation after receiving a complete response
+    });
+
+    socket.on('error', (err) => {
+      console.error('Socket error:', err);
+    });
+
+    function escapeHtml(unsafe) {
+      return unsafe.replace(/[&<"']/g, function (m) {
+        return {
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#039;'
+        }[m];
+      });
+    }
+
+    function formatMessage(message) {
+      const codeBlockRegex = /```([\s\S]*?)```/g;
+      let lastIndex = 0;
+      let match;
+      const formattedMessage = [];
+
+      while ((match = codeBlockRegex.exec(message)) !== null) {
+        formattedMessage.push(escapeHtml(message.substring(lastIndex, match.index)));
+        formattedMessage.push(`<code>${escapeHtml(match[1])}</code>`);
+        lastIndex = codeBlockRegex.lastIndex;
+      }
+      formattedMessage.push(escapeHtml(message.substring(lastIndex)));
+
+      return formattedMessage.join('');
+    }
+
+    // Load the conversation when the page loads
+    loadConversation(conversationName);
+  </script>
+</body>
+</html>
