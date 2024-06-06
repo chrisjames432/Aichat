@@ -19,8 +19,16 @@ if (!fs.existsSync(conversationsDir)) {
   fs.mkdirSync(conversationsDir);
 }
 
+const getConversationsList = () => {
+  return fs.readdirSync(conversationsDir).map(file => path.basename(file, '.json'));
+};
+
 io.on('connection', (socket) => {
   console.log('a user connected');
+
+  socket.on('get_conversations', () => {
+    socket.emit('conversations_list', getConversationsList());
+  });
 
   socket.on('load_conversation', (conversationName) => {
     const filePath = path.join(conversationsDir, `${conversationName}.json`);
@@ -38,14 +46,41 @@ io.on('connection', (socket) => {
     fs.writeFileSync(filePath, JSON.stringify(data));
   });
 
+  socket.on('delete_conversation', (conversationName) => {
+    const filePath = path.join(conversationsDir, `${conversationName}.json`);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      socket.emit('conversations_list', getConversationsList());
+    }
+  });
+
+  socket.on('rename_conversation', ({ oldName, newName }) => {
+    const oldFilePath = path.join(conversationsDir, `${oldName}.json`);
+    const newFilePath = path.join(conversationsDir, `${newName}.json`);
+    if (fs.existsSync(oldFilePath)) {
+      fs.renameSync(oldFilePath, newFilePath);
+      const conversationData = JSON.parse(fs.readFileSync(newFilePath, 'utf8'));
+      conversationData.name = newName;
+      fs.writeFileSync(newFilePath, JSON.stringify(conversationData));
+      socket.emit('conversation_renamed', { oldName, newName });
+      socket.emit('conversations_list', getConversationsList());
+    }
+  });
+
   socket.on('user_message', async (data) => {
     const { conversationName, message } = data;
     const conversationFile = path.join(conversationsDir, `${conversationName}.json`);
 
     let conversationHistory = [];
     if (fs.existsSync(conversationFile)) {
-      const conversationData = JSON.parse(fs.readFileSync(conversationFile, 'utf8'));
-      conversationHistory = conversationData.messages;
+      try {
+        const conversationData = JSON.parse(fs.readFileSync(conversationFile, 'utf8'));
+        conversationHistory = conversationData.messages;
+      } catch (error) {
+        console.error('Error reading conversation file:', error);
+        socket.emit('error', 'Error reading conversation file');
+        return;
+      }
     }
 
     conversationHistory.push({ role: 'user', content: message });
@@ -81,7 +116,12 @@ io.on('connection', (socket) => {
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);
     }
-    socket.emit('conversation_loaded', { name: conversationName, messages: [], history: [] });
+
+    const newConversationData = { name: conversationName, messages: [], history: [] };
+    fs.writeFileSync(filePath, JSON.stringify(newConversationData));  // Save the new conversation to the file
+
+    socket.emit('conversation_loaded', newConversationData);
+    socket.emit('conversations_list', getConversationsList());
   });
 
   socket.on('disconnect', () => {
@@ -101,16 +141,14 @@ const shutdown = () => {
   console.log('Shutting down server...');
   server.close(() => {
     console.log('HTTP server closed.');
-    // Optionally, close any other resources like database connections here
     process.exit(0);
   });
 
-  // If server hasn't finished closing after 10 seconds, force shutdown
   setTimeout(() => {
     console.error('Forcing server shutdown...');
     process.exit(1);
   }, 500);
 };
 
-process.on('SIGINT', shutdown); // Handle Ctrl+C
-process.on('SIGTERM', shutdown); // Handle termination signals
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

@@ -1,0 +1,613 @@
+Only show files you edit.
+This is the current version of the project directory and its file contents.
+
+Directory Structure of the Project
+This file contains a structured listing of all directories and files within the project. Contents are included for specified files.
+
+├── app.js
+├── public
+    ├── copy.js
+    ├── index.html
+    ├── main.js
+    ├── styles.css
+
+Contents of app.js:
+--- start -----------------------
+
+require('dotenv').config();
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const OpenAI = require('openai');
+const fs = require('fs');
+const path = require('path');
+
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
+
+const conversationsDir = path.join(__dirname, 'conversations');
+if (!fs.existsSync(conversationsDir)) {
+  fs.mkdirSync(conversationsDir);
+}
+
+const getConversationsList = () => {
+  return fs.readdirSync(conversationsDir).map(file => path.basename(file, '.json'));
+};
+
+io.on('connection', (socket) => {
+  console.log('a user connected');
+
+  socket.on('get_conversations', () => {
+    socket.emit('conversations_list', getConversationsList());
+  });
+
+  socket.on('load_conversation', (conversationName) => {
+    const filePath = path.join(conversationsDir, `${conversationName}.json`);
+    if (fs.existsSync(filePath)) {
+      const conversationData = fs.readFileSync(filePath, 'utf8');
+      socket.emit('conversation_loaded', JSON.parse(conversationData));
+    } else {
+      socket.emit('conversation_loaded', { name: conversationName, messages: [], history: [] });
+    }
+  });
+
+  socket.on('save_conversation', (data) => {
+    const { name, messages, history } = data;
+    const filePath = path.join(conversationsDir, `${name}.json`);
+    fs.writeFileSync(filePath, JSON.stringify(data));
+  });
+
+  socket.on('delete_conversation', (conversationName) => {
+    const filePath = path.join(conversationsDir, `${conversationName}.json`);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      socket.emit('conversations_list', getConversationsList());
+    }
+  });
+
+  socket.on('rename_conversation', ({ oldName, newName }) => {
+    const oldFilePath = path.join(conversationsDir, `${oldName}.json`);
+    const newFilePath = path.join(conversationsDir, `${newName}.json`);
+    if (fs.existsSync(oldFilePath)) {
+      fs.renameSync(oldFilePath, newFilePath);
+      const conversationData = JSON.parse(fs.readFileSync(newFilePath, 'utf8'));
+      conversationData.name = newName;
+      fs.writeFileSync(newFilePath, JSON.stringify(conversationData));
+      socket.emit('conversation_renamed', { oldName, newName });
+      socket.emit('conversations_list', getConversationsList());
+    }
+  });
+
+  socket.on('user_message', async (data) => {
+    const { conversationName, message } = data;
+    const conversationFile = path.join(conversationsDir, `${conversationName}.json`);
+
+    let conversationHistory = [];
+    if (fs.existsSync(conversationFile)) {
+      try {
+        const conversationData = JSON.parse(fs.readFileSync(conversationFile, 'utf8'));
+        conversationHistory = conversationData.messages;
+      } catch (error) {
+        console.error('Error reading conversation file:', error);
+        socket.emit('error', 'Error reading conversation file');
+        return;
+      }
+    }
+
+    conversationHistory.push({ role: 'user', content: message });
+
+    try {
+      const stream = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: conversationHistory,
+        stream: true,
+      });
+
+      let assistantResponse = '';
+
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        assistantResponse += content;
+        socket.emit('assistant_message', content);
+      }
+
+      conversationHistory.push({ role: 'assistant', content: assistantResponse });
+      socket.emit('end_response');
+
+      const conversationData = { name: conversationName, messages: conversationHistory, history: conversationHistory };
+      fs.writeFileSync(conversationFile, JSON.stringify(conversationData));
+    } catch (error) {
+      console.error('Error with OpenAI API:', error);
+      socket.emit('error', 'Error with OpenAI API');
+    }
+  });
+
+  socket.on('new_conversation', (conversationName) => {
+    const filePath = path.join(conversationsDir, `${conversationName}.json`);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    const newConversationData = { name: conversationName, messages: [], history: [] };
+    fs.writeFileSync(filePath, JSON.stringify(newConversationData));  // Save the new conversation to the file
+
+    socket.emit('conversation_loaded', newConversationData);
+    socket.emit('conversations_list', getConversationsList());
+  });
+
+  socket.on('disconnect', () => {
+    console.log('user disconnected');
+  });
+});
+
+app.use(express.static('public'));
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
+
+// Graceful shutdown
+const shutdown = () => {
+  console.log('Shutting down server...');
+  server.close(() => {
+    console.log('HTTP server closed.');
+    process.exit(0);
+  });
+
+  setTimeout(() => {
+    console.error('Forcing server shutdown...');
+    process.exit(1);
+  }, 500);
+};
+
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+
+
+--- end -----------------------
+
+
+Contents of public\copy.js:
+--- start -----------------------
+
+function addCopyButtons() {
+    document.querySelectorAll('pre > code').forEach((codeBlock) => {
+        if (!codeBlock.querySelector('.copy-code')) { // Check if button already exists
+            console.log('Adding copy button to code block');
+            const copyButton = document.createElement('button');
+            copyButton.className = 'copy-code';
+            copyButton.textContent = 'Copy';
+
+            copyButton.addEventListener('click', () => {
+                const code = codeBlock.innerText;
+                navigator.clipboard.writeText(code).then(() => {
+                    copyButton.textContent = 'Copied';
+                    setTimeout(() => {
+                        copyButton.textContent = 'Copy';
+                    }, 2000);
+                }).catch(err => {
+                    console.error('Failed to copy text: ', err);
+                });
+            });
+
+            const pre = codeBlock.parentNode;
+            pre.style.position = 'relative';
+            pre.appendChild(copyButton);
+        }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('Document fully loaded and parsed');
+    addCopyButtons(); // Initial call to add copy buttons
+});
+
+
+--- end -----------------------
+
+
+Contents of public\index.html:
+--- start -----------------------
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat with AI</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/themes/prism-okaidia.min.css">
+  <script defer src="/socket.io/socket.io.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/prism.min.js"></script>
+  <script defer src="main.js"></script>
+  <script defer src="copy.js"></script> <!-- Script to handle copy button functionality -->
+</head>
+<body>
+  <div id="sidebar">
+    <h2>Conversations</h2>
+    <button id="new-conversation-button">New Conversation</button>
+    <div id="conversations-list"></div>
+  </div>
+  <div id="main">
+    <div id="chat-box"></div>
+    <div id="input-container">
+      <input type="text" id="user-input" placeholder="Type your message here" />
+      <button id="send-button">Send</button>
+    </div>
+  </div>
+</body>
+</html>
+
+
+--- end -----------------------
+
+
+Contents of public\main.js:
+--- start -----------------------
+
+const socket = io();
+const chatBox = document.getElementById('chat-box');
+const userInput = document.getElementById('user-input');
+const sendButton = document.getElementById('send-button');
+const newConversationButton = document.getElementById('new-conversation-button');
+const conversationsList = document.getElementById('conversations-list');
+
+let conversationName = '';
+let assistantMessage = '';
+let conversationHistory = [];
+
+function sendMessage() {
+  const userMessage = userInput.value.trim();
+  if (userMessage === '') {
+    return; // Do not send empty messages
+  }
+  userInput.value = '';
+  chatBox.innerHTML += `<div class="message user-message"><strong>User:</strong> ${formatMessage(userMessage)}</div>`;
+  chatBox.scrollTop = chatBox.scrollHeight;
+
+  conversationHistory.push({ role: 'user', content: userMessage });
+  assistantMessage = '';
+  if (!conversationName) {
+    startNewConversation();
+  }
+  console.log('Sending message:', userMessage);
+  socket.emit('user_message', { conversationName, message: userMessage });
+  setTimeout(addCopyButtons, 100); // Add copy buttons to new message
+}
+
+function loadConversation(name) {
+  conversationName = name;
+  console.log('Loading conversation:', name);
+  socket.emit('load_conversation', name);
+  highlightActiveConversation(name);
+}
+
+function deleteConversation(name) {
+  console.log('Deleting conversation:', name);
+  socket.emit('delete_conversation', name);
+}
+
+function updateConversationsList(conversations) {
+  console.log('Updating conversations list:', conversations);
+  conversationsList.innerHTML = '';
+  conversations.forEach(name => {
+    const div = document.createElement('div');
+    div.className = 'conversation-item';
+    div.innerHTML = `<span ondblclick="editConversationName(event, '${name}')">${name}</span><button onclick="deleteConversation('${name}')">x</button>`;
+    div.onclick = () => loadConversation(name);
+    conversationsList.appendChild(div);
+  });
+  highlightActiveConversation(conversationName);
+}
+
+function startNewConversation() {
+  conversationName = `con${Date.now()}`;
+  conversationHistory = [];
+  chatBox.innerHTML = '';
+  console.log('Starting new conversation:', conversationName);
+  socket.emit('new_conversation', conversationName);
+  // Add the new conversation to the list immediately
+  const newConversationDiv = document.createElement('div');
+  newConversationDiv.className = 'conversation-item active';
+  newConversationDiv.innerHTML = `<span ondblclick="editConversationName(event, '${conversationName}')">${conversationName}</span><button onclick="deleteConversation('${conversationName}')">x</button>`;
+  newConversationDiv.onclick = () => loadConversation(conversationName);
+  conversationsList.appendChild(newConversationDiv);
+  highlightActiveConversation(conversationName);
+}
+
+function highlightActiveConversation(name) {
+  console.log('Highlighting active conversation:', name);
+  const items = document.querySelectorAll('.conversation-item');
+  items.forEach(item => {
+    if (item.firstChild.textContent === name) {
+      item.classList.add('active');
+    } else {
+      item.classList.remove('active');
+    }
+  });
+}
+
+function editConversationName(event, oldName) {
+  const span = event.target;
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = oldName;
+  input.className = 'edit-conversation-name';
+  span.replaceWith(input);
+
+  input.addEventListener('blur', () => renameConversation(input, oldName));
+  input.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+      renameConversation(input, oldName);
+    }
+  });
+
+  input.focus();
+}
+
+function renameConversation(input, oldName) {
+  const newName = input.value.trim();
+  if (newName && newName !== oldName) {
+    console.log('Renaming conversation:', oldName, 'to', newName);
+    socket.emit('rename_conversation', { oldName, newName });
+  } else {
+    const span = document.createElement('span');
+    span.textContent = oldName;
+    span.ondblclick = (event) => editConversationName(event, oldName);
+    input.replaceWith(span);
+  }
+}
+
+function escapeHtml(unsafe) {
+  return unsafe.replace(/[&<>"']/g, (m) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;',
+  }[m]));
+}
+
+function formatMessage(message) {
+  const codeBlockRegex = /```([\s\S]*?)```/g;
+
+  // Escape HTML entities and replace code blocks
+  let formattedMessage = message.replace(codeBlockRegex, (match, p1) => {
+    // Remove language label from the code block
+    const cleanedCode = p1.replace(/^(python|html|javascript|java|cpp|csharp)\s*/, '');
+    return `<pre><code>${escapeHtml(cleanedCode)}</code></pre>`;
+  });
+
+  // Replace new lines outside code blocks with <br>
+  formattedMessage = formattedMessage.replace(/\n(?!<\/?code>)/g, '<br>');
+
+  return formattedMessage;
+}
+
+newConversationButton.addEventListener('click', () => {
+  console.log('New conversation button clicked');
+  startNewConversation();
+});
+
+userInput.addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    console.log('Enter key pressed');
+    sendMessage();
+  }
+});
+
+sendButton.addEventListener('click', () => {
+  console.log('Send button clicked');
+  sendMessage();
+});
+
+socket.on('conversation_loaded', (data) => {
+  const { name, messages, history } = data;
+  conversationHistory = history || [];
+  console.log('Conversation loaded:', name, messages, history);
+  chatBox.innerHTML = messages.map(msg => {
+    const roleClass = msg.role === 'user' ? 'user-message' : 'assistant-message';
+    return `<div class="message ${roleClass}"><strong>${msg.role.charAt(0).toUpperCase() + msg.role.slice(1)}:</strong> ${formatMessage(msg.content)}</div>`;
+  }).join('');
+  Prism.highlightAll();  // Re-run Prism to highlight code blocks
+  setTimeout(addCopyButtons, 100); // Add copy buttons after highlighting
+  highlightActiveConversation(name);
+});
+
+socket.on('assistant_message', (msg) => {
+  console.log('Assistant message received:', msg);
+  assistantMessage += msg;
+  const lastAssistantMessage = document.querySelector('#chat-box div.assistant-message:last-of-type');
+  if (lastAssistantMessage) {
+    chatBox.removeChild(lastAssistantMessage);
+  }
+  chatBox.innerHTML += `<div class="message assistant-message"><strong>Assistant:</strong> ${formatMessage(assistantMessage)}</div>`;
+  chatBox.scrollTop = chatBox.scrollHeight;
+  Prism.highlightAll();  // Re-run Prism to highlight code blocks
+  setTimeout(addCopyButtons, 100); // Add copy buttons after highlighting
+});
+
+socket.on('end_response', () => {
+  console.log('End response received');
+  conversationHistory.push({ role: 'assistant', content: assistantMessage });
+  assistantMessage = '';
+});
+
+socket.on('conversations_list', (conversations) => {
+  console.log('Conversations list received:', conversations);
+  updateConversationsList(conversations);
+});
+
+socket.on('error', (err) => {
+  console.error('Socket error:', err);
+});
+
+socket.emit('get_conversations');
+
+socket.on('conversation_renamed', ({ oldName, newName }) => {
+  if (conversationName === oldName) {
+    conversationName = newName;
+  }
+  updateConversationsList(getConversationsList());
+});
+
+function getConversationsList() {
+  // This should return the list of conversation names, either from a server response or from some state.
+  // Placeholder function, replace with actual implementation.
+  return [];
+}
+
+
+--- end -----------------------
+
+
+Contents of public\styles.css:
+--- start -----------------------
+
+body {
+  font-family: Arial, sans-serif;
+  display: flex;
+  height: 100vh;
+  margin: 0;
+}
+
+#sidebar {
+  width: 250px;
+  background-color: #f4f4f4;
+  padding: 20px;
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+}
+
+#sidebar h2 {
+  margin: 0 0 20px;
+}
+
+#new-conversation-button {
+  padding: 10px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-bottom: 20px;
+}
+
+#new-conversation-button:hover {
+  background-color: #0056b3;
+}
+
+.conversation-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 5px 0;
+}
+
+.conversation-item button {
+  background: none;
+  border: none;
+  color: red;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.conversation-item button:hover {
+  color: darkred;
+}
+
+#main {
+  width: calc(100% - 250px);
+  display: flex;
+  flex-direction: column;
+}
+
+#chat-box {
+  flex-grow: 1;
+  padding: 20px;
+  overflow-y: auto;
+  background-color: #fff;
+  border-bottom: 1px solid #ccc;
+}
+
+#input-container {
+  display: flex;
+  padding: 10px;
+  background-color: #f9f9f9;
+  border-top: 1px solid #ccc;
+}
+
+#user-input {
+  flex-grow: 1;
+  padding: 10px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  margin-right: 10px;
+}
+
+#send-button {
+  padding: 10px 20px;
+  background-color: #007bff;
+  border: none;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#send-button:hover {
+  background-color: #0056b3;
+}
+
+.message {
+  margin: 10px 0;
+}
+
+.user-message {
+  font-weight: bold;
+}
+
+.assistant-message {
+  font-weight: bold;
+  color: blue;
+}
+
+code {
+  display: block;
+  background-color: #f8f8f8;
+  padding: 10px;
+  margin: 10px 0;
+  border-left: 5px solid #ccc;
+  white-space: pre-wrap;
+  font-family: monospace;
+  position: relative;
+}
+
+.copy-code {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: #007bff;
+  color: white;
+  border: none;
+  padding: 5px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.copy-code:hover {
+  background: #0056b3;
+}
+
+.conversation-item.active {
+  background-color: #d0e7ff;
+}
+
+
+--- end -----------------------
+
+
