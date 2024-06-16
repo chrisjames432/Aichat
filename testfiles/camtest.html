@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Screen Capture</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .capture-box {
+      position: absolute;
+      border: 2px dashed #333;
+      background-color: rgba(255, 255, 255, 0.5);
+      cursor: crosshair;
+      display: none;
+      z-index: 999;
+    }
+    .popup {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: #fff;
+      padding: 20px;
+      border: 1px solid #ccc;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+      z-index: 1000;
+      display: none;
+    }
+    .popup-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .popup-buttons {
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Screen Capture Tool</h1>
+  <p>Click and drag to select an area to capture:</p>
+
+  <!-- Capture box for selecting area -->
+  <div class="capture-box"></div>
+
+  <!-- JavaScript to handle the selection and popup display -->
+  <script>
+    let captureBox = document.querySelector('.capture-box');
+    let popup = document.querySelector('.popup');
+    let popupContent = document.querySelector('.popup-content');
+    let startX, startY;
+
+    // Function to show capture box and set initial position
+    function startCapture(event) {
+      startX = event.clientX;
+      startY = event.clientY;
+
+      captureBox.style.display = 'block';
+      captureBox.style.left = startX + 'px';
+      captureBox.style.top = startY + 'px';
+    }
+
+    // Function to update capture box size based on mouse movement
+    function updateCapture(event) {
+      let width = event.clientX - startX;
+      let height = event.clientY - startY;
+
+      captureBox.style.width = Math.abs(width) + 'px';
+      captureBox.style.height = Math.abs(height) + 'px';
+
+      captureBox.style.left = (width < 0 ? event.clientX : startX) + 'px';
+      captureBox.style.top = (height < 0 ? event.clientY : startY) + 'px';
+    }
+
+    // Function to show popup with selected area details
+    function showPopup() {
+      captureBox.style.display = 'none';
+      popup.style.display = 'block';
+
+      let rect = captureBox.getBoundingClientRect();
+      let x = rect.left;
+      let y = rect.top;
+      let width = rect.width;
+      let height = rect.height;
+
+      popupContent.innerHTML = `
+        <p>Selected Area:</p>
+        <p>X: ${x}, Y: ${y}</p>
+        <p>Width: ${width}, Height: ${height}</p>
+        <div class="popup-buttons">
+          <button onclick="captureScreenshot()">Capture Screenshot</button>
+          <button onclick="closePopup()">Cancel</button>
+        </div>
+      `;
+    }
+
+    // Function to close the popup
+    function closePopup() {
+      popup.style.display = 'none';
+    }
+
+    // Event listeners for capturing the area
+    document.addEventListener('mousedown', startCapture);
+    document.addEventListener('mousemove', updateCapture);
+    captureBox.addEventListener('mouseup', showPopup);
+  </script>
+
+  <!-- Popup for confirming selected area -->
+  <div class="popup">
+    <div class="popup-content"></div>
+  </div>
+
+</body>
+</html>

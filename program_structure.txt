@@ -4,12 +4,26 @@ This is the current version of the project directory and its file contents.
 Directory Structure of the Project
 This file contains a structured listing of all directories and files within the project. Contents are included for specified files.
 
+├── .gitignore
 ├── app.js
 ├── public
     ├── copy.js
     ├── index.html
     ├── main.js
     ├── styles.css
+├── testfiles
+    ├── camtest.html
+    ├── screenshot.js
+    ├── screenshot.png
+
+Contents of .gitignore:
+--- start -----------------------
+
+node_modules
+.env
+
+--- end -----------------------
+
 
 Contents of app.js:
 --- start -----------------------
@@ -27,7 +41,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAIKEY,
 });
 
 const conversationsDir = path.join(__dirname, 'conversations');
@@ -227,6 +241,45 @@ Contents of public\index.html:
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/prism.min.js"></script>
   <script defer src="main.js"></script>
   <script defer src="copy.js"></script> <!-- Script to handle copy button functionality -->
+<style>
+
+#info-column button, #info-column select {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 10px; /* Adds space between the buttons and dropdown */
+  box-sizing: border-box; /* Includes padding and border in the width */
+}
+
+#info-column select {
+  cursor: pointer;
+}
+
+.extra-content {
+  padding: 10px;
+  margin-bottom: 10px; /* Adds space between divs */
+  background-color: #e9e9e9;
+  border: 1px solid #ccc;
+}
+
+#info-column{
+padding: 10px;
+border:1px solid black;
+margin-right: 10px;
+}
+
+
+#extra-column{
+  padding: 10px;
+border:1px solid black;
+margin-right: 10px;
+
+
+}
+
+</style>
+
+
+
 </head>
 <body>
   <div id="sidebar">
@@ -241,6 +294,26 @@ Contents of public\index.html:
       <button id="send-button">Send</button>
     </div>
   </div>
+
+  
+
+  <div id="info-column">
+    <button id="info-button-1">Info Button 1</button>
+    <button id="info-button-2">Info Button 2</button>
+    <select id="info-dropdown">
+      <option value="option1">Option 1</option>
+      <option value="option2">Option 2</option>
+      <option value="option3">Option 3</option>
+    </select>
+  </div>
+  <div id="extra-column">
+    <div class="extra-content">Text in Div 1</div>
+    <div class="extra-content">Text in Div 2</div>
+    <div class="extra-content">Text in Div 3</div>
+    <div class="extra-content">Text in Div 4</div>
+  </div>
+  
+  
 </body>
 </html>
 
@@ -444,24 +517,18 @@ socket.on('conversations_list', (conversations) => {
   updateConversationsList(conversations);
 });
 
+socket.on('conversation_renamed', ({ oldName, newName }) => {
+  if (conversationName === oldName) {
+    conversationName = newName;
+  }
+  socket.emit('get_conversations'); // Refresh the conversations list
+});
+
 socket.on('error', (err) => {
   console.error('Socket error:', err);
 });
 
 socket.emit('get_conversations');
-
-socket.on('conversation_renamed', ({ oldName, newName }) => {
-  if (conversationName === oldName) {
-    conversationName = newName;
-  }
-  updateConversationsList(getConversationsList());
-});
-
-function getConversationsList() {
-  // This should return the list of conversation names, either from a server response or from some state.
-  // Placeholder function, replace with actual implementation.
-  return [];
-}
 
 
 --- end -----------------------
@@ -475,11 +542,12 @@ body {
   display: flex;
   height: 100vh;
   margin: 0;
+  padding: 0px;
 }
 
 #sidebar {
   width: 250px;
-  background-color: #f4f4f4;
+  background-color: #5c5c5c9d;
   padding: 20px;
   box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
 }
@@ -607,6 +675,171 @@ code {
   background-color: #d0e7ff;
 }
 
+
+--- end -----------------------
+
+
+Contents of testfiles\camtest.html:
+--- start -----------------------
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Screen Capture</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+    .capture-box {
+      position: absolute;
+      border: 2px dashed #333;
+      background-color: rgba(255, 255, 255, 0.5);
+      cursor: crosshair;
+      display: none;
+      z-index: 999;
+    }
+    .popup {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background-color: #fff;
+      padding: 20px;
+      border: 1px solid #ccc;
+      box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+      z-index: 1000;
+      display: none;
+    }
+    .popup-content {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .popup-buttons {
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Screen Capture Tool</h1>
+  <p>Click and drag to select an area to capture:</p>
+
+  <!-- Capture box for selecting area -->
+  <div class="capture-box"></div>
+
+  <!-- JavaScript to handle the selection and popup display -->
+  <script>
+    let captureBox = document.querySelector('.capture-box');
+    let popup = document.querySelector('.popup');
+    let popupContent = document.querySelector('.popup-content');
+    let startX, startY;
+
+    // Function to show capture box and set initial position
+    function startCapture(event) {
+      startX = event.clientX;
+      startY = event.clientY;
+
+      captureBox.style.display = 'block';
+      captureBox.style.left = startX + 'px';
+      captureBox.style.top = startY + 'px';
+    }
+
+    // Function to update capture box size based on mouse movement
+    function updateCapture(event) {
+      let width = event.clientX - startX;
+      let height = event.clientY - startY;
+
+      captureBox.style.width = Math.abs(width) + 'px';
+      captureBox.style.height = Math.abs(height) + 'px';
+
+      captureBox.style.left = (width < 0 ? event.clientX : startX) + 'px';
+      captureBox.style.top = (height < 0 ? event.clientY : startY) + 'px';
+    }
+
+    // Function to show popup with selected area details
+    function showPopup() {
+      captureBox.style.display = 'none';
+      popup.style.display = 'block';
+
+      let rect = captureBox.getBoundingClientRect();
+      let x = rect.left;
+      let y = rect.top;
+      let width = rect.width;
+      let height = rect.height;
+
+      popupContent.innerHTML = `
+        <p>Selected Area:</p>
+        <p>X: ${x}, Y: ${y}</p>
+        <p>Width: ${width}, Height: ${height}</p>
+        <div class="popup-buttons">
+          <button onclick="captureScreenshot()">Capture Screenshot</button>
+          <button onclick="closePopup()">Cancel</button>
+        </div>
+      `;
+    }
+
+    // Function to close the popup
+    function closePopup() {
+      popup.style.display = 'none';
+    }
+
+    // Event listeners for capturing the area
+    document.addEventListener('mousedown', startCapture);
+    document.addEventListener('mousemove', updateCapture);
+    captureBox.addEventListener('mouseup', showPopup);
+  </script>
+
+  <!-- Popup for confirming selected area -->
+  <div class="popup">
+    <div class="popup-content"></div>
+  </div>
+
+</body>
+</html>
+
+
+--- end -----------------------
+
+
+Contents of testfiles\screenshot.js:
+--- start -----------------------
+
+const screenshot = require('screenshot-desktop');
+const fs = require('fs');
+
+// Function to capture a screenshot
+async function takeScreenshot() {
+  try {
+    // Capture the screenshot
+    const img = await screenshot();
+
+    // Save the screenshot to a file (optional)
+    fs.writeFileSync('screenshot.png', img);
+
+    console.log('Screenshot captured and saved as screenshot.png');
+  } catch (err) {
+    console.error('Error capturing screenshot:', err);
+  }
+}
+
+// Call the function to capture the screenshot
+takeScreenshot();
+
+
+--- end -----------------------
+
+
+Contents of testfiles\screenshot.png:
+--- start -----------------------
+
+Error reading file: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte
 
 --- end -----------------------
 

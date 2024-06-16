@@ -60,7 +60,8 @@ def main():
         'conversations',
         'program_structure.txt',
         'package-lock.json', 
-        'package.json'
+        'package.json',
+        'app2.js'
     ]
     filename = 'program_structure.txt'
     files_left = create_directory_structure(filename, ignore_list)

@@ -10,19 +10,41 @@
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.25.0/prism.min.js"></script>
   <script defer src="main.js"></script>
   <script defer src="copy.js"></script> <!-- Script to handle copy button functionality -->
+
 </head>
 <body>
-  <div id="sidebar">
+  <div id="sidebar" class="col">
     <h2>Conversations</h2>
     <button id="new-conversation-button">New Conversation</button>
     <div id="conversations-list"></div>
   </div>
-  <div id="main">
+  <div id="main" class="col">
     <div id="chat-box"></div>
     <div id="input-container">
       <input type="text" id="user-input" placeholder="Type your message here" />
       <button id="send-button">Send</button>
     </div>
   </div>
+
+  
+  <input type="file" id="directory-input" webkitdirectory style="display: none;">
+
+  <div id="info-column" class="col">
+    <button id="info-button-1">Select Project</button>
+    <button id="info-button-2">Info Button 2</button>
+    <select id="info-dropdown">
+      <option value="option1">Option 1</option>
+      <option value="option2">Option 2</option>
+      <option value="option3">Option 3</option>
+    </select>
+  </div>
+  <div id="extra-column" class="col">
+    <div class="extra-content">Text in Div 1</div>
+    <div class="extra-content">Text in Div 2</div>
+    <div class="extra-content">Text in Div 3</div>
+    <div class="extra-content">Text in Div 4</div>
+  </div>
+  
+  
 </body>
 </html>

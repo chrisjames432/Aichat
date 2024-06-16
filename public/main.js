@@ -4,7 +4,8 @@ const userInput = document.getElementById('user-input');
 const sendButton = document.getElementById('send-button');
 const newConversationButton = document.getElementById('new-conversation-button');
 const conversationsList = document.getElementById('conversations-list');
-
+const infoColumn = document.getElementById('info-column');
+const directoryInput = document.getElementById('directory-input');
 let conversationName = '';
 let assistantMessage = '';
 let conversationHistory = [];
@@ -202,4 +203,50 @@ socket.on('error', (err) => {
   console.error('Socket error:', err);
 });
 
+socket.on('directory_contents', (data) => {
+  const { name, files } = data;
+  const directoryDiv = document.createElement('div');
+  directoryDiv.className = 'directory-contents';
+  directoryDiv.innerHTML = `<h3>Contents of ${name}:</h3><ul>${files.map(file => `<li>${file}</li>`).join('')}</ul>`;
+  infoColumn.appendChild(directoryDiv);
+});
+
+
 socket.emit('get_conversations');
+
+
+
+
+// Function to handle directory picking
+async function pickDirectory() {
+  directoryInput.click();
+}
+
+// Handle the directory input change event
+directoryInput.addEventListener('change', (event) => {
+  const files = event.target.files;
+  if (files.length > 0) {
+    const directoryName = files[0].webkitRelativePath.split('/')[0];
+    const fileList = Array.from(files).map(file => file.webkitRelativePath);
+    console.log('Directory picked:', directoryName, fileList);
+
+    // Send the directory data to the server
+    socket.emit('directory_picked', { name: directoryName, files: fileList });
+  }
+});
+
+
+// Function to set up event listeners
+function setupEventListeners() {
+  const infoButton1 = document.getElementById('info-button-1');
+  infoButton1.addEventListener('click', pickDirectory);
+}
+
+// Add an event listener for document load
+document.addEventListener('DOMContentLoaded', () => {
+  console.log('Document fully loaded and parsed');
+  setupEventListeners();
+  addCopyButtons(); // Initial call to add copy buttons
+});
+
+

@@ -11,7 +11,7 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENAIKEY,
 });
 
 const conversationsDir = path.join(__dirname, 'conversations');
@@ -124,10 +124,54 @@ io.on('connection', (socket) => {
     socket.emit('conversations_list', getConversationsList());
   });
 
+
+
+
+
+
+  socket.on('directory_picked', (data) => {
+    const { name } = data;
+    const directoryPath = path.join(__dirname, name);
+    if (fs.existsSync(directoryPath)) {
+      // Perform operations with the directory
+      console.log('Directory exists:', directoryPath);
+      // Example: List all files in the directory
+      const files = fs.readdirSync(directoryPath);
+      socket.emit('directory_contents', { name, files });
+    } else {
+      console.error('Directory does not exist:', directoryPath);
+      socket.emit('error', 'Directory does not exist');
+    }
+  });
+  
+
+
+
+
+
+
+
+
+
+
+
+
   socket.on('disconnect', () => {
     console.log('user disconnected');
   });
 });
+
+
+
+
+
+
+
+
+
+
+
+
 
 app.use(express.static('public'));
 
